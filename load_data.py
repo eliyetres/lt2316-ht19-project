@@ -1,7 +1,10 @@
-from os import listdir
+import argparse
+import re
 import string
+from os import listdir
 from pickle import dump
- 
+
+
 # load doc into memory
 def load_doc(filename):
 	# open the file as read only
@@ -59,16 +62,28 @@ def clean_lines(lines):
 	cleaned = [c for c in cleaned if len(c) > 0]
 	return cleaned
  
-# load stories
-directory = "data/cnn/stories/"
-stories = load_stories(directory)
-print("Loaded number of stories {}:".format(len(stories))
- 
-# clean stories
-for example in stories:
-	example["story"] = clean_lines(example['story'].split('\n'))
-	example["highlights"] = clean_lines(example["highlights"])
+def get_data(data_path,save_file):
+    # load stories
+	directory = data_path
+	stories = load_stories(directory)
+	print("Loaded number of stories :{}.".format(len(stories)))
+	
+	# clean stories
+	for example in stories:
+		example["story"] = clean_lines(example['story'].split('\n'))
+		example["highlights"] = clean_lines(example["highlights"])
 
+		# save to file
+		dump(stories, open(save_file+'.pkl', 'wb'))
+		print("Saved stories to {}.".format(save_file))
 
-# save to file
-dump(stories, open('cnn_dataset.pkl', 'wb'))
+parser = argparse.ArgumentParser(description="Saves a pickled file to disk with the preprocessed texts.")
+
+parser.add_argument("-path", type=str, dest="data_path", help="Folder name of the CNN stories.")
+parser.add_argument("-save", type=str, dest="save_file", help="Name of the pickled file to be saved to disk.")
+
+args = parser.parse_args()
+
+get_data(args.data_path, args.save_file)
+
+# python load_data.py -path data/cnn/test -save stories_test
