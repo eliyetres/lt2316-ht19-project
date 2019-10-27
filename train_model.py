@@ -13,10 +13,6 @@ from utils import get_vocab
 from encoder_RNN import EncoderRNN
 from decoder_RNN import LuongAttnDecoderRNN
 
-# load from file
-stories = pickle_load(open('cnn_dataset.pkl', 'rb'))
-print('Loaded Stories %d' % len(stories))
-
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 if device == "cpu":  # is using GPU, pin Dataloader to memory
     pin_memory = False

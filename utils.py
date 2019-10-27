@@ -44,3 +44,29 @@ def indexesFromSentence(voc, sentence, EOS_token):
     Takes string sentence, returns sentence of word indexes 
     """
     return [voc.word2index[word] for word in sentence.split(' ')] + [EOS_token]
+
+def split_data(sentences, size=0.2):
+    
+    test_dict = {}
+    train_dict = {}
+
+    # Sentences is a dictionary, keys are integers
+    sentence_keys = list(sentences.keys())
+    print("Total length of sentences: ".format(len(sentences)))
+
+    # Splitting data into sets
+    print("Splitting data into training and tests sets...")
+    trainset, testset = train_test_split(sentence_keys, test_size=size)
+
+    # Printing the lengths of the sets
+    print("Length of training set: {}".format(len(trainset)))
+    print("Length of test set: {}".format(len(testset)))
+
+    # Putting the corresponding values into the new sets as dictionaries
+    for k in trainset:
+        train_dict[k] = sentences[k]
+
+    for j in testset:
+        test_dict[j] = sentences[j]
+
+    return train_dict, test_dict
