@@ -1,15 +1,14 @@
 import torch.nn as nn
 import torch.nn.functional as F
-class Encoder(nn.Module):
+import random
+import torch
+
+class GRUEncoder(nn.Module):
     def __init__(self, input_dim, emb_dim, enc_hid_dim, dec_hid_dim, dropout):
-        super().__init__()
-        
-        self.embedding = nn.Embedding(input_dim, emb_dim)
-        
-        self.rnn = nn.GRU(emb_dim, enc_hid_dim, bidirectional = True)
-        
-        self.fc = nn.Linear(enc_hid_dim * 2, dec_hid_dim)
-        
+        super().__init__()        
+        self.embedding = nn.Embedding(input_dim, emb_dim)        
+        self.rnn = nn.GRU(emb_dim, enc_hid_dim, bidirectional = True)        
+        self.fc = nn.Linear(enc_hid_dim * 2, dec_hid_dim)        
         self.dropout = nn.Dropout(dropout)
         
     def forward(self, src):
@@ -40,7 +39,7 @@ class Encoder(nn.Module):
         
         return outputs, hidden
 
-class Attention(nn.Module):
+class GRUAttention(nn.Module):
     def __init__(self, enc_hid_dim, dec_hid_dim):
         super().__init__()
         
@@ -84,50 +83,149 @@ class Attention(nn.Module):
         return F.softmax(attention, dim=1)
 
 
-class Decoder(nn.Module):
-    def __init__(self, device,embedding, embedding_size,
-                 hidden_size, output_size, n_layers=1, dropout=0.1):
+class GRUDecoder(nn.Module):
+    def __init__(self, output_dim, emb_dim, enc_hid_dim, dec_hid_dim, dropout, attention):
+        super().__init__()
+
+        self.output_dim = output_dim
+        self.attention = attention        
+        self.embedding = nn.Embedding(output_dim, emb_dim)        
+        self.rnn = nn.GRU((enc_hid_dim * 2) + emb_dim, dec_hid_dim)        
+        self.out = nn.Linear((enc_hid_dim * 2) + dec_hid_dim + emb_dim, output_dim)
         
-        super(Decoder, self).__init__()
+        self.dropout = nn.Dropout(dropout)
         
-        # Basic network params
-        self.device = device
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.n_layers = n_layers
-        self.dropout = dropout
-        self.embedding = embedding
+    def forward(self, input, hidden, encoder_outputs):
+             
+        #input = [batch size]
+        #hidden = [batch size, dec hid dim]
+        #encoder_outputs = [src sent len, batch size, enc hid dim * 2]
+        
+        input = input.unsqueeze(0)
+        
+        #input = [1, batch size]
+        
+        embedded = self.dropout(self.embedding(input))
+        
+        #embedded = [1, batch size, emb dim]
+        
+        a = self.attention(hidden, encoder_outputs)
                 
-        self.gru = nn.GRU(embedding_size, hidden_size, n_layers, 
-                          dropout=dropout)
+        #a = [batch size, src len]
         
-        self.concat = nn.Linear(hidden_size * 2, hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
-        self.attn = Attention(hidden_size)
+        a = a.unsqueeze(1)
         
-    def forward(self, current_token, hidden_state, encoder_outputs, mask):
-      
-        # convert current_token to word_embedding
-        #embedded = self.embedding(input_step)
-        embedded = self.embedding(current_token)
+        #a = [batch size, 1, src len]
         
-        # Pass through GRU
-        rnn_output, hidden_state = self.gru(embedded, hidden_state)
+        encoder_outputs = encoder_outputs.permute(1, 0, 2)
         
-        # Calculate attention weights
-        attention_weights = self.attn(rnn_output, encoder_outputs, mask)
+        #encoder_outputs = [batch size, src sent len, enc hid dim * 2]
         
-        # Calculate context vector
-        context = attention_weights.bmm(encoder_outputs.transpose(0, 1))
+        weighted = torch.bmm(a, encoder_outputs)
         
-        # Concatenate  context vector and GRU output
-        rnn_output = rnn_output.squeeze(0)
-        context = context.squeeze(1)
-        concat_input = torch.cat((rnn_output, context), 1)
-        concat_output = torch.tanh(self.concat(concat_input))
+        #weighted = [batch size, 1, enc hid dim * 2]
         
-        # Pass concat_output to final output layer
-        output = self.out(concat_output)
+        weighted = weighted.permute(1, 0, 2)
         
-        # Return output and final hidden state
-        return output, hidden_state
+        #weighted = [1, batch size, enc hid dim * 2]
+        
+        rnn_input = torch.cat((embedded, weighted), dim = 2)
+        
+        #rnn_input = [1, batch size, (enc hid dim * 2) + emb dim]
+            
+        output, hidden = self.rnn(rnn_input, hidden.unsqueeze(0))
+        
+        #output = [sent len, batch size, dec hid dim * n directions]
+        #hidden = [n layers * n directions, batch size, dec hid dim]
+        
+        #sent len, n layers and n directions will always be 1 in this decoder, therefore:
+        #output = [1, batch size, dec hid dim]
+        #hidden = [1, batch size, dec hid dim]
+        #this also means that output == hidden
+        assert (output == hidden).all()
+        
+        embedded = embedded.squeeze(0)
+        output = output.squeeze(0)
+        weighted = weighted.squeeze(0)
+        
+        output = self.out(torch.cat((output, weighted, embedded), dim = 1))
+        
+        #output = [bsz, output dim]
+        
+        return output, hidden.squeeze(0)
+
+
+class Seq2Seq(nn.Module):
+    def __init__(self, encoder, decoder,pad_idx, sos_idx, eos_idx, device):
+        super().__init__()        
+        self.encoder = encoder
+        self.decoder = decoder
+        self.pad_idx = pad_idx
+        self.sos_idx = sos_idx
+        self.eos_idx = eos_idx
+        self.device = device
+    
+    def forward(self, src, trg, teacher_forcing_ratio =0.5):       
+        #src = [src sent len, batch size]
+        #trg = [trg sent len, batch size]
+        #teacher_forcing_ratio is probability to use teacher forcing
+        #e.g. if teacher_forcing_ratio is 0.75 we use teacher forcing 75% of the time       
+        if trg is None:
+            print("Target is none")
+            assert teacher_forcing_ratio == 0, "Must be zero during inference"
+            inference = True
+            trg = torch.zeros((100, src.shape[1])).long().fill_(self.sos_idx).to(src.device)
+        else:
+            inference = False
+
+        batch_size = src.shape[1]
+        #print("batch size model: ", batch_size)
+        max_len = trg.shape[0]
+        trg_vocab_size = self.decoder.output_dim
+        
+        #tensor to store decoder outputs
+        outputs = torch.zeros(max_len, batch_size, trg_vocab_size).to(self.device)
+
+        #tensor to store attention
+        attentions = torch.zeros(max_len, batch_size, src.shape[0]).to(self.device)
+        
+        #encoder_outputs is all hidden states of the input sequence, back and forwards
+        #hidden is the final forward and backward hidden states, passed through a linear layer
+        encoder_outputs, hidden = self.encoder(src)
+                
+        #first input to the decoder is the <sos> tokens
+        # print("Target:")
+        # print(trg)
+        input = trg[0,:]
+        # print("input")
+        # print(input)
+        
+        for t in range(1, max_len):            
+            #insert input token embedding, previous hidden state and all encoder hidden states
+            #receive output tensor (predictions) and new hidden state
+            #output, hidden = self.decoder(input, hidden, encoder_outputs)
+            output, hidden, attention = self.decoder(input, hidden, encoder_outputs)
+            
+            #place predictions in a tensor holding predictions for each token
+            outputs[t] = output
+
+            #place attentions in a tensor holding attention value for each input token
+            attentions[t] = attention
+            
+            #decide if we are going to use teacher forcing or not
+            teacher_force = random.random() < teacher_forcing_ratio
+            
+            #get the highest predicted token from our predictions
+            top1 = output.argmax(1) 
+
+            print("Predicted word: ", top1)
+            
+            #if teacher forcing, use actual next token as next input
+            #if not, use predicted token
+            input = trg[t] if teacher_force else top1
+
+            #if doing inference and next token/prediction is an eos token then stop
+            if inference and input.item() == self.eos_idx:
+                return outputs[:t], attentions[:t]
+
+        return outputs, attentions       

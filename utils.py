@@ -1,15 +1,15 @@
 import pickle
 import re
-import torch
+
 import numpy as np
-from gensim.models import KeyedVectors
-from sklearn.model_selection import train_test_split
-from config import EMBEDDING_SIZE,PAD_TOKEN,SOS_TOKEN,EOS_TOKEN
-from nltk.tokenize import word_tokenize
-from spacy.vectors import Vectors
 import spacy
+import torch
+from gensim.models import KeyedVectors
+from nltk.tokenize import word_tokenize
+from sklearn.model_selection import train_test_split
+from spacy.vectors import Vectors
 
-
+from config import EMBEDDING_SIZE, EOS_TOKEN, PAD_TOKEN, SOS_TOKEN
 
 # def get_vocab(data):
 #     """ Gets the vocabulary for the sentences """
@@ -34,7 +34,7 @@ import spacy
 
 
 # def split_data(sentences, size=0.33):
-	
+
 #     test_dict = {}
 #     train_dict = {}
 
@@ -59,121 +59,169 @@ import spacy
 
 #     return train_dict, test_dict
 
-def normalizeString(s):
-	""" 
-	Lowercase and remove non-letter characters 
-	"""
-	s = s.lower()
-	s = re.sub(r"([.!?])", r" \1", s)
-	s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
-	return s
+# def normalizeString(s):
+# 	"""
+# 	Lowercase and remove non-letter characters
+# 	"""
+# 	s = s.lower()
+# 	s = re.sub(r"([.!?])", r" \1", s)
+# 	s = re.sub(r"[^a-zA-Z.!?]+", r" ", s)
+# 	return s
 
-def indexesFromSentence(voc, sentence):
-	""" 
-	Takes string sentence, returns sentence of word indexes 
-	"""
-	return [voc.word2index[word] for word in sentence.split(' ')] + [EOS_TOKEN]
 
+# def indexesFromSentence(voc, sentence):
+# 	"""
+# 	Takes string sentence, returns sentence of word indexes
+# 	"""
+# 	return [voc.word2index[word] for word in sentence.split(' ')] + [EOS_TOKEN]
+
+# for tokenizing the english sentences
+spacy_en = spacy.load('en_core_web_sm')
+def tokenize_en(text):
+	# tokenizes the english text into a list of strings(tokens)
+	return [tok.text for tok in spacy_en.tokenizer(text)]
 
 def pad_vec_sequences(sequences, maxlen=40):
-	new_sequences = []
-	for sequence in sequences:
+    new_sequences = []
+    for sequence in sequences:
 
-		orig_len, vec_len = np.shape(sequence)
+        orig_len, vec_len = np.shape(sequence)
 
-		if orig_len < maxlen:
-			new = np.zeros((maxlen, vec_len))
-			for k in range(maxlen-orig_len,maxlen):
-				new[k:, :] = sequence[k-maxlen+orig_len]
+        if orig_len < maxlen:
+            new = np.zeros((maxlen, vec_len))
+            for k in range(maxlen-orig_len, maxlen):
+                new[k:, :] = sequence[k-maxlen+orig_len]
 
-		else:
-			new = np.zeros((maxlen, vec_len))
-			for k in range(0,maxlen):
-				new[k:,:] = sequence[k]
+        else:
+            new = np.zeros((maxlen, vec_len))
+            for k in range(0, maxlen):
+                new[k:, :] = sequence[k]
 
-		new_sequences.append(new)
+        new_sequences.append(new)
 
-	return np.array(new_sequences)
+    return np.array(new_sequences)
 
 
 def add_tags(stories):
-	X_stories = []
-	y_highlights = []
-	for story in stories:
-		new_story=""
-		new_highlight=""
-		for article in story["story"]:
-			new_article = SOS_TOKEN+" "+article+" "+EOS_TOKEN
-			new_story+=" "+new_article
-		new_story=new_story.split()
-		for summary in  story["highlights"]:
-				new_summary = SOS_TOKEN+" "+summary+" "+EOS_TOKEN
-				new_highlight+=" "+new_summary
-		new_highlight=new_highlight.split()
-		X_stories.append(new_story)
-		y_highlights.append(new_highlight)   	
+    X_stories = []
+    y_highlights = []
+    for story in stories:
+        new_story = ""
+        new_highlight = ""
+        for article in story["story"]:
+            new_article = SOS_TOKEN+" "+article+" "+EOS_TOKEN
+            new_story += " "+new_article
+        new_story = new_story.split()
+        for summary in story["highlights"]:
+            new_summary = SOS_TOKEN+" "+summary+" "+EOS_TOKEN
+            new_highlight += " "+new_summary
+        new_highlight = new_highlight.split()
+        X_stories.append(new_story)
+        y_highlights.append(new_highlight)
 
-	return X_stories, y_highlights	
-
+    return X_stories, y_highlights
 
 
 def load_model(model_path):
-	model = KeyedVectors.load_word2vec_format(model_path, binary=True)
-	return model
+    model = KeyedVectors.load_word2vec_format(model_path, binary=True)
+    return model
 
-def cut_parts(text,n):
-	result = []
-	for sentence in text:
-		if n <= 0:
-			return result
-		sli = sentence
-		if len(sli) > n:
-			sli = sli[:n]
-			result.append(sli)  
-		else:
-			result.append(sli)     
-		n -= len(sli)
-	return result
 
+def cut_parts(text, n):
+    result = []
+    for sentence in text:
+        if n <= 0:
+            return result
+        sli = sentence
+        if len(sli) > n:
+            sli = sli[:n]
+            result.append(sli)
+        else:
+            result.append(sli)
+        n -= len(sli)
+    return result
 
 
 def get_word_embedding(token, model):
-	# generate an array of zeros of length = embedding_size
-	if token in ["<unk>",PAD_TOKEN]:
-		return np.zeros(EMBEDDING_SIZE, dtype=np.float32)
-	# Assign random vector to <s>, </s> token
-	elif token in [SOS_TOKEN,EOS_TOKEN]:    
-		return np.random.normal(0, 1, EMBEDDING_SIZE)
-	try:
-		return model[token]
-	except KeyError:
-		# generate an array of zeros of length = embedding_size
-		print("{} not found in model!".format(token))        
-		return np.zeros(EMBEDDING_SIZE, dtype=np.float32)
+    # generate an array of zeros of length = embedding_size
+    if token in ["<unk>", PAD_TOKEN]:
+        return np.zeros(EMBEDDING_SIZE, dtype=np.float32)
+    # Assign random vector to <s>, </s> token
+    elif token in [SOS_TOKEN, EOS_TOKEN]:
+        return np.random.normal(0, 1, EMBEDDING_SIZE)
+    try:
+        return model[token]
+    except KeyError:
+        # generate an array of zeros of length = embedding_size
+        print("{} not found in model!".format(token))
+        return np.zeros(EMBEDDING_SIZE, dtype=np.float32)
 
 
-
-def shorten_data(stories,max_story=400,max_highlight=100):
+def shorten_data(stories, max_story=400, max_highlight=100):
     highlight_lengths = []
-	story_lengths = []
-	for example in stories:    
-		st_len = []
-		hi_len = []
-		highlight = example["highlights"]
-		st = example["story"]
-		
-		highlight = cut_parts(highlight,max_highlight)  
-		story = cut_parts(st,max_story)
-		example["highlights"]=highlight
-		example["story"]=story
-		[st_len.append(len(y)) for y in story]           
-		[hi_len.append(len(y)) for y in highlight]
-		story_lengths.append(sum(st_len))
-		highlight_lengths.append(sum(hi_len))
+    story_lengths = []
+    for example in stories:
+        st_len = []
+        hi_len = []
+        highlight = example["highlights"]
+        st = example["story"]
 
-		highlight_avg = sum(highlight_lengths)/len(highlight_lengths)
-		story_avg = sum(story_lengths)/len(story_lengths)
-		print("Highlights average character length: {}".format(highlight_avg))
-		print("Story average character length: {}".format(story_avg))
+        highlight = cut_parts(highlight, max_highlight)
+        story = cut_parts(st, max_story)
+        example["highlights"] = highlight
+        example["story"] = story
+        [st_len.append(len(y)) for y in story]
+        [hi_len.append(len(y)) for y in highlight]
+        story_lengths.append(sum(st_len))
+        highlight_lengths.append(sum(hi_len))
 
-		return stories	
+        highlight_avg = sum(highlight_lengths)/len(highlight_lengths)
+        story_avg = sum(story_lengths)/len(story_lengths)
+        print("Highlights average character length: {}".format(highlight_avg))
+        print("Story average character length: {}".format(story_avg))
+
+        return stories
+
+
+def tokenize_stories(stories):
+    X_stories = []
+    y_highlights = []
+    for story in stories:
+        article = [tokenize_en(s) for s in story["story"]]
+        highlight = [tokenize_en(h) for h in story["highlights"]]
+        X_stories.append(article)
+        y_highlights.append(highlight)
+
+    return X_stories, y_highlights
+
+
+def epoch_time(start_time, end_time):
+    elapsed_time = end_time - start_time
+    elapsed_mins = int(elapsed_time / 60)
+    elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
+
+    return elapsed_mins, elapsed_secs
+
+
+def evaluate(model, iterator, criterion):    
+    model.eval()    
+    epoch_loss = 0    
+    with torch.no_grad():    
+        for i, batch in enumerate(iterator):
+            src = batch.stories
+            trg = batch.highlights
+
+            output = model(src, trg, 0) #turn off teacher forcing
+            #trg = [trg sent len, batch size]
+            #output = [trg sent len, batch size, output dim]
+
+            output = output[1:].view(-1, output.shape[-1])
+            trg = trg[1:].view(-1)
+
+            #trg = [(trg sent len - 1) * batch size]
+            #output = [(trg sent len - 1) * batch size, output dim]
+
+            loss = criterion(output, trg)
+            epoch_loss += loss.item()
+        
+    return epoch_loss / len(iterator)
