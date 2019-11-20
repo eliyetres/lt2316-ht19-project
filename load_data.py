@@ -1,11 +1,17 @@
 import argparse
+import csv
 import re
 import string
+import sys
 from os import listdir
 from pickle import dump, load
 
+import pandas as pd
+import spacy
 from nltk.tokenize import word_tokenize
 from sklearn.model_selection import train_test_split
+
+from config import DATA_PATH, EOS_TOKEN, SAVE_TO_PATH, SOS_TOKEN
 
 
 def load_doc(filename):
@@ -25,8 +31,6 @@ def split_story(doc):
     index = doc.find('@highlight')
     # split into story and highlights
     story, highlights = doc[:index], doc[index:].split('@highlight')
-    # print(story)
-    # print(highlights)
     # strip extra white space around each highlight
     highlights = [h.strip() for h in highlights if len(h) > 0]
     return story, highlights
@@ -45,10 +49,28 @@ def load_stories(directory):
         stories.append({'story': story, 'highlights': highlights})
     return stories
 
+def change_prefixes(word):
+    eng_prefixes = {
+    "i'm ":"i am ",    
+    "he's ":"he is",    
+    "she's ":"she is",   
+    "you're ":"you are",  
+    "we're ":"we are",   
+    "they're":"they are" 
+    }
+    if word in eng_prefixes.keys():
+         word = word[eng_prefixes]
+    return word
+
+
+def remove_alphanum(word):
+    word = re.sub(r'\W+', '', word)
+    return word
+
 
 def clean_lines(lines):
     """ Clean list with all lines """
-    cleaned = []
+    cleaned = ""
     # prepare a translation table to remove punctuation
     table = str.maketrans('', '', string.punctuation)
     for line in lines:
@@ -57,36 +79,67 @@ def clean_lines(lines):
         if index > -1:
             line = line[index+len('(CNN)'):]
         # remove CNN title
-        line = line.replace('(CNN) -- ','')
+        line = line.replace('(CNN) -- ', '')
+        line = line.replace('(CNN)', '')
+
+        # swicth characters to space to avoid compund words
+        line = re.sub(r'\W+', ' ', line)
+        print(line)
         # tokenize on white space
         line = line.split()
         # convert to lower case
         line = [word.lower() for word in line]
         # remove punctuation from each token
-        line = [w.translate(table) for w in line]
+        #line = [w.translate(table) for w in line]
+
+        
         # remove tokens with numbers in them
-        line = [word for word in line if word.isalpha()]
-        # store as string
-        cleaned.append(' '.join(line))
-    # remove empty strings
-    cleaned = [c for c in cleaned if len(c) > 0]
+        #line = [word for word in line if word.isalpha()]
+        # removing non alphanumeric characters
+        #line = [remove_alphanum(w) for w in line]
+        cleaned = cleaned+","+' '.join(line)
     return cleaned
 
 
-def split_data(stories, size=0.33):
-    """ Split data into training and test sets, 30% as training data """
+def cut_stories(cleaned, max_len):
+    # cut the text at the max length
+    cleaned = cleaned[0:max_len]
+    cleaned = cleaned.split(",")
+    # remove empty strings
+    cleaned = [c for c in cleaned if len(c) > 0] 
+    # remove the last word because it's probably not a full word
+    cleaned = cleaned[:-1]
+    cleaned = " ".join(cleaned)
+    return cleaned
+
+def cut_highlights(cleaned, max_len):
+    cleaned = [c for c in cleaned if len(c) > 0] 
+    cleaned = "".join(cleaned)
+    print(cleaned)
+    # cut the text at the max length
+    cleaned = cleaned[0:max_len]
+    cleaned = re.sub(r',', ' ', cleaned)
+    cleaned = cleaned.split(" ")
+    print(cleaned)
+    # remove empty strings
+    cleaned = [c for c in cleaned if len(c) > 0] 
+    # remove the last word because it's probably not a full word
+    print(cleaned)
+    cleaned = cleaned[:-1]
+    print(cleaned)
+    cleaned = " ".join(cleaned)
+    return cleaned
+
+
+def split_data(stories, size=0.20):
     # Splitting data into sets
-    print("Splitting data into training and tests sets...")
     trainset, testset = train_test_split(stories, test_size=size)
     # Printing the lengths of the sets
-    print("Number of stories saved to training set: {}".format(len(trainset)))
-    print("Number of stories saved to test set: {}".format(len(testset)))
-
     return trainset, testset
 
 
 def clean_stories(data_path, save_file):
-    """ Load stories """
+    print("Loading stories...")
     directory = data_path
     stories = load_stories(directory)
     print("Loaded number of stories: {}.".format(len(stories)))
@@ -95,18 +148,36 @@ def clean_stories(data_path, save_file):
         example["story"] = clean_lines(example['story'].split('\n'))
         example["highlights"] = clean_lines(example["highlights"])
 
+        example["story"] = cut_stories(example['story'], 400)
+        example["highlights"] = cut_highlights(example["highlights"], 100)
+    # split text
+    print("Splitting stories into train and test...")
+    train, test = split_data(stories)
+    train, val = split_data(train)
+    print("Number of stories in training set: {}".format(len(train)))
+    print("Number of stories in validation set: {}".format(len(val)))
+    print("Number of stories in test set: {}".format(len(test)))
 
-    # split into training and test sets
-    train_dict, test_dict = split_data(stories)
-    # saving training and test data to pickle file
-    dump(train_dict, open(save_file+'_train.pkl', 'wb'))
-    dump(test_dict, open(save_file+'_test.pkl', 'wb'))
-    print("Saved stories for training and test to files: {} and {}.".format(
-        save_file+"_train.pkl", save_file+"_test.pkl"))
-    # save to file
-    #dump(stories, open(save_file+'.pkl', 'wb'))
-    #print("Saved stories to file: {}.".format(save_file))
+    print("Writing data to files...")
+    test_filename = save_file + "_train.csv"
+    val_filename = save_file + "_val.csv"
+    train_filename = save_file + "_test.csv"
 
+    df1 = pd.DataFrame.from_dict(train)
+    df1.to_csv(train_filename, encoding='utf-8', index=False)
+
+    df2 = pd.DataFrame.from_dict(test)
+    df2.to_csv(test_filename, encoding='utf-8', index=False)
+
+    df3 = pd.DataFrame.from_dict(val)
+    df3.to_csv(val_filename, encoding='utf-8', index=False)
+
+    print("Finished processing data, saved train, validation and test files as {}, {} and {} ".format(
+        train_filename, val_filename, test_filename))
+
+    # use this to get one file with all data
+    #df4 = pd.DataFrame.from_dict(stories)
+    #df4.to_csv("all_stories", encoding='utf-8', index=False) 
 
 # parser = argparse.ArgumentParser(description="Saves a pickled file to disk with the preprocessed texts.")
 
@@ -114,7 +185,7 @@ def clean_stories(data_path, save_file):
 # parser.add_argument("-save", type=str, dest="save_file", help="Name of the pickled files to be saved to disk. The files will be saved as this name plus train and test, like example_train and example_test")
 # args = parser.parse_args()
 #clean_stories(args.data_path, args.save_file)
-clean_stories("data/cnn/test", "small")
+clean_stories(DATA_PATH, SAVE_TO_PATH)
 
 
 # python load_data.py -path data/cnn/test -save stories_test
