@@ -5,9 +5,13 @@ import string
 import sys
 from os import listdir
 from pickle import dump, load
+import numpy as np
 
+import nltk
+#nltk.download('stopwords')
 import pandas as pd
 import spacy
+from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from sklearn.model_selection import train_test_split
 
@@ -73,8 +77,6 @@ def remove_alphanum(word):
     word = re.sub(r'\W+', '', word)
     return word
 
-import nltk
-from nltk.corpus import stopwords
 
 
 def clean_lines(lines):
@@ -86,7 +88,6 @@ def clean_lines(lines):
         if index > -1:
             line = line[index+len('(CNN)'):]
         # remove CNN titles
-        line = line.replace('(CNN) -- ', '')
         line = line.replace('(CNN)', '') 
         # replace dash with space to avoid compund words  
         line = line.replace('-', ' ')
@@ -160,6 +161,10 @@ def clean_stories(data_path, save_file):
         example["highlights"] = clean_lines(example["highlights"])
         example["story"] = cut_stories(example['story'], 400)
         example["highlights"] = cut_highlights(example["highlights"], 100)
+
+        if example["story"] == "":
+            example["story"] = np.nan
+
     # split text
     print("Splitting stories into train and test...")
     train, test = split_data(stories)
@@ -174,13 +179,18 @@ def clean_stories(data_path, save_file):
     train_filename = save_file + "_test.csv"
 
     df1 = pd.DataFrame.from_dict(train)
-    df1.to_csv(train_filename, encoding='utf-8', index=False)
-
     df2 = pd.DataFrame.from_dict(test)
-    df2.to_csv(test_filename, encoding='utf-8', index=False)
+    df3 = pd.DataFrame.from_dict(val) 
+    
+    # Drop rows with any empty cells
+    df1.dropna(how='any', inplace=True)  
+    df2.dropna(how='any', inplace=True)   
+    df3.dropna(how='any', inplace=True)
 
-    df3 = pd.DataFrame.from_dict(val)
+    # write to file
     df3.to_csv(val_filename, encoding='utf-8', index=False)
+    df1.to_csv(train_filename, encoding='utf-8', index=False)
+    df2.to_csv(test_filename, encoding='utf-8', index=False)
 
     print("Finished processing data, saved train, validation and test files as {}, {} and {} ".format(
         train_filename, val_filename, test_filename))
