@@ -56,10 +56,16 @@ def change_prefixes(word):
     "she's ":"she is",   
     "you're ":"you are",  
     "we're ":"we are",   
-    "they're":"they are" 
+    "they're":"they are",
+    "they've":"they have",
+    "hadn't": "had not",
+    "no.": "number",
+    "gov":"governor",
+    "it's":"it is",
+    "can't":"can not"    
     }
     if word in eng_prefixes.keys():
-         word = word[eng_prefixes]
+        word = eng_prefixes[word]
     return word
 
 
@@ -71,32 +77,34 @@ def remove_alphanum(word):
 def clean_lines(lines):
     """ Clean list with all lines """
     cleaned = ""
-    # prepare a translation table to remove punctuation
-    table = str.maketrans('', '', string.punctuation)
     for line in lines:
         # strip source cnn office if it exists
         index = line.find('(CNN) -- ')
         if index > -1:
             line = line[index+len('(CNN)'):]
-        # remove CNN title
+        # remove CNN titles
         line = line.replace('(CNN) -- ', '')
-        line = line.replace('(CNN)', '')
-
-        # swicth characters to space to avoid compund words
-        line = re.sub(r'\W+', ' ', line)
-        print(line)
+        line = line.replace('(CNN)', '') 
+        # replace dash with space to avoid compund words  
+        line = line.replace('-', ' ')
+        # remove characters
+        line = re.sub(r'[\'\?\!\"\*\&\"\:\.\,\(\)]', '', line)
+        line = re.sub(r'[Ã©Ã±]', '', line)
+        # remove genitive
+        line = re.sub(r's', '', line)  
+        line = line.replace('  ', ' ')  
         # tokenize on white space
         line = line.split()
         # convert to lower case
         line = [word.lower() for word in line]
         # remove punctuation from each token
-        #line = [w.translate(table) for w in line]
-
-        
+        #line = [w.translate(table) for w in line]        
         # remove tokens with numbers in them
         #line = [word for word in line if word.isalpha()]
         # removing non alphanumeric characters
         #line = [remove_alphanum(w) for w in line]
+        line = [change_prefixes(word) for word in line]
+
         cleaned = cleaned+","+' '.join(line)
     return cleaned
 
@@ -115,18 +123,14 @@ def cut_stories(cleaned, max_len):
 def cut_highlights(cleaned, max_len):
     cleaned = [c for c in cleaned if len(c) > 0] 
     cleaned = "".join(cleaned)
-    print(cleaned)
     # cut the text at the max length
     cleaned = cleaned[0:max_len]
     cleaned = re.sub(r',', ' ', cleaned)
     cleaned = cleaned.split(" ")
-    print(cleaned)
     # remove empty strings
     cleaned = [c for c in cleaned if len(c) > 0] 
     # remove the last word because it's probably not a full word
-    print(cleaned)
     cleaned = cleaned[:-1]
-    print(cleaned)
     cleaned = " ".join(cleaned)
     return cleaned
 
@@ -147,7 +151,6 @@ def clean_stories(data_path, save_file):
     for example in stories:
         example["story"] = clean_lines(example['story'].split('\n'))
         example["highlights"] = clean_lines(example["highlights"])
-
         example["story"] = cut_stories(example['story'], 400)
         example["highlights"] = cut_highlights(example["highlights"], 100)
     # split text
