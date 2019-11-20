@@ -73,6 +73,9 @@ def remove_alphanum(word):
     word = re.sub(r'\W+', '', word)
     return word
 
+import nltk
+from nltk.corpus import stopwords
+
 
 def clean_lines(lines):
     """ Clean list with all lines """
@@ -87,11 +90,12 @@ def clean_lines(lines):
         line = line.replace('(CNN)', '') 
         # replace dash with space to avoid compund words  
         line = line.replace('-', ' ')
+        line = line.replace('/', ' ')
         # remove characters
-        line = re.sub(r'[\'\?\!\"\*\&\"\:\.\,\(\)]', '', line)
+        line = re.sub(r'[\'\?\!\"\*\&\"\:\.\,\(\)\$\;]', '', line)
         line = re.sub(r'[Ã©Ã±]', '', line)
         # remove genitive
-        line = re.sub(r's', '', line)  
+        line = re.sub(r'\'s', '', line)  
         line = line.replace('  ', ' ')  
         # tokenize on white space
         line = line.split()
@@ -121,6 +125,7 @@ def cut_stories(cleaned, max_len):
     return cleaned
 
 def cut_highlights(cleaned, max_len):
+    stop_words = set(stopwords.words('english')) 
     cleaned = [c for c in cleaned if len(c) > 0] 
     cleaned = "".join(cleaned)
     # cut the text at the max length
@@ -131,6 +136,8 @@ def cut_highlights(cleaned, max_len):
     cleaned = [c for c in cleaned if len(c) > 0] 
     # remove the last word because it's probably not a full word
     cleaned = cleaned[:-1]
+    # remove stop words for highlights
+    cleaned = [w for w in cleaned if not w in stop_words]
     cleaned = " ".join(cleaned)
     return cleaned
 
