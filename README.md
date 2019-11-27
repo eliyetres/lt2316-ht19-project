@@ -7,6 +7,7 @@ Project for Machine Learning course at the University of Gothenburg
 The CNN News Story Dataset
 
 The DeepMind Q&A Dataset is a large collection of news articles from CNN and the Daily Mail with associated summaries. The dataset was developed as a question and answering task for deep learning and was presented in the 2015 paper "Teaching Machines to Read and Comprehend." The dataset is commonly used in text summarization tasks.
+*NOTE:* The full dataset (compressed) was too large to upload. The dataset in the repo contains 2000 stories.
 
 ### Preprocessing
 
