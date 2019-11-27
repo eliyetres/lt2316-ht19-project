@@ -1,4 +1,4 @@
-# Word-based Astractive Text Summarization using Sequence-to-Sequence modeling with attention
+# Word-based abstractive text summarization using seq2seq-modeling with attention
 
 Project for Machine Learning course at the University of Gothenburg
 
